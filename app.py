@@ -27,13 +27,10 @@ def image_to_video():
 
         # Decode
         img_data = base64.b64decode(base64_image)
-        
-        # Log size for debugging
-        print(f"Image bytes received: {len(img_data)}")
 
         if len(img_data) < 100:
             return jsonify({
-                "error": "Image data too small",
+                "error": "Image too small",
                 "bytes": len(img_data)
             }), 400
 
@@ -44,21 +41,23 @@ def image_to_video():
         with open(img_path, 'wb') as f:
             f.write(img_data)
 
-        print(f"Saved image: {os.path.getsize(img_path)} bytes")
-
-        # FFmpeg convert
+        # ✅ Optimized FFmpeg - uses less memory and CPU
         result = subprocess.run([
             'ffmpeg', '-y',
             '-loop', '1',
             '-i', img_path,
             '-c:v', 'libx264',
+            '-preset', 'ultrafast',    # ✅ Fastest, least memory
+            '-tune', 'stillimage',     # ✅ Optimized for image input
             '-t', str(duration),
             '-pix_fmt', 'yuv420p',
-            '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1',
+            '-vf', 'scale=720:1280',   # ✅ Smaller size (was 1080x1920)
+            '-crf', '28',              # ✅ Lower quality = smaller file
+            '-r', '24',                # ✅ 24fps is enough
+            '-movflags', '+faststart', # ✅ Faster processing
+            '-threads', '1',           # ✅ Single thread = less memory
             output_path
         ], capture_output=True, text=True, timeout=120)
-
-        print(f"FFmpeg stderr: {result.stderr[-300:]}")
 
         if not os.path.exists(output_path):
             return jsonify({
@@ -67,7 +66,6 @@ def image_to_video():
             }), 500
 
         video_size = os.path.getsize(output_path)
-        print(f"Output video: {video_size} bytes")
 
         if video_size < 1000:
             return jsonify({
@@ -84,8 +82,11 @@ def image_to_video():
         )
 
     except Exception as e:
-        print(f"Exception: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 5000)),
+        threaded=False      # ✅ Single thread = less memory
+    )
